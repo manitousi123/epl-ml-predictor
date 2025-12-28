@@ -1,0 +1,28 @@
+# Byte-compiled / cache
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Env files
+.env
+
+# Data (keep structure, ignore actual files)
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Models (ignore files, keep folder)
+models/*
+!models/.gitkeep
+
+# OS stuff
+.DS_Store
+Thumbs.db
