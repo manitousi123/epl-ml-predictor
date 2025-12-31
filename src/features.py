@@ -81,3 +81,118 @@ def add_team_form_features(df: pd.DataFrame, window: int = 5) -> pd.DataFrame:
     }).drop(columns=["Team"])
 
     return out
+
+def add_gap_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Adds relative-strength and balance features comparing
+    home and away rolling form statistics.
+    """
+    out = df.copy()
+
+    # Relative strength (home minus away)
+    out["PTS_gap"] = out["Home_PTS_roll"] - out["Away_PTS_roll"]
+    out["GF_gap"]  = out["Home_GF_roll"]  - out["Away_GF_roll"]
+    out["GA_gap"]  = out["Away_GA_roll"]  - out["Home_GA_roll"]  # defensive advantage
+
+    # Balance indicators (smaller -> more evenly matched -> draw-like)
+    out["Form_balance_PTS"] = (out["Home_PTS_roll"] - out["Away_PTS_roll"]).abs()
+    out["Form_balance_GF"]  = (out["Home_GF_roll"]  - out["Away_GF_roll"]).abs()
+    out["Form_balance_GA"]  = (out["Home_GA_roll"]  - out["Away_GA_roll"]).abs()
+
+    return out
+
+
+def add_team_strength_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Adds season-long team strength features based on all matches
+    played so far in that season (home + away combined).
+
+    For each (Season, Team) it computes expanding (cumulative) averages
+    of goals scored, goals conceded, and points per match, then attaches
+    them as separate features for the home and away team in each match.
+    """
+    out = df.copy()
+
+    # Make sure we have season + points info.
+    # Result: 0 = home win, 1 = draw, 2 = away win
+    home_points_map = {0: 3, 1: 1, 2: 0}
+    away_points_map = {0: 0, 1: 1, 2: 3}
+
+    out["HomePoints"] = out["Result"].map(home_points_map)
+    out["AwayPoints"] = out["Result"].map(away_points_map)
+
+    # Build long table: one row per (team, match) with season + date
+    home_df = out[["SeasonFile", "Date", "HomeTeam", "FTHG", "FTAG", "HomePoints"]].rename(
+        columns={
+            "HomeTeam": "Team",
+            "FTHG": "GF",
+            "FTAG": "GA",
+            "HomePoints": "Points",
+        }
+    )
+
+    away_df = out[["SeasonFile", "Date", "AwayTeam", "FTAG", "FTHG", "AwayPoints"]].rename(
+        columns={
+            "AwayTeam": "Team",
+            "FTAG": "GF",
+            "FTHG": "GA",
+            "AwayPoints": "Points",
+        }
+    )
+
+    long_df = pd.concat([home_df, away_df], ignore_index=True)
+    long_df = long_df.sort_values(["SeasonFile", "Date"])
+
+    # Group by (season, team) and compute expanding averages
+    group = long_df.groupby(["SeasonFile", "Team"])
+
+    long_df["Season_GF_avg"] = (
+        group["GF"].expanding().mean().reset_index(level=[0, 1], drop=True)
+    )
+    long_df["Season_GA_avg"] = (
+        group["GA"].expanding().mean().reset_index(level=[0, 1], drop=True)
+    )
+    long_df["Season_PTS_avg"] = (
+        group["Points"].expanding().mean().reset_index(level=[0, 1], drop=True)
+    )
+
+    # Merge home team strength back onto match rows
+    out = out.merge(
+        long_df[
+            ["SeasonFile", "Date", "Team",
+             "Season_GF_avg", "Season_GA_avg", "Season_PTS_avg"]
+        ],
+        left_on=["SeasonFile", "Date", "HomeTeam"],
+        right_on=["SeasonFile", "Date", "Team"],
+        how="left",
+    ).rename(
+        columns={
+            "Season_GF_avg": "Home_Season_GF_avg",
+            "Season_GA_avg": "Home_Season_GA_avg",
+            "Season_PTS_avg": "Home_Season_PTS_avg",
+        }
+    ).drop(columns=["Team"])
+
+    # Merge away team strength
+    out = out.merge(
+        long_df[
+            ["SeasonFile", "Date", "Team",
+             "Season_GF_avg", "Season_GA_avg", "Season_PTS_avg"]
+        ],
+        left_on=["SeasonFile", "Date", "AwayTeam"],
+        right_on=["SeasonFile", "Date", "Team"],
+        how="left",
+    ).rename(
+        columns={
+            "Season_GF_avg": "Away_Season_GF_avg",
+            "Season_GA_avg": "Away_Season_GA_avg",
+            "Season_PTS_avg": "Away_Season_PTS_avg",
+        }
+    ).drop(columns=["Team"])
+
+    # Gap features based on season-long strength
+    out["Season_PTS_gap"] = out["Home_Season_PTS_avg"] - out["Away_Season_PTS_avg"]
+    out["Season_GF_gap"]  = out["Home_Season_GF_avg"]  - out["Away_Season_GF_avg"]
+    out["Season_GA_gap"]  = out["Away_Season_GA_avg"]  - out["Home_Season_GA_avg"]
+
+    return out
