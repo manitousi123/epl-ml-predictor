@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 
 def add_basic_match_features(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -194,5 +195,115 @@ def add_team_strength_features(df: pd.DataFrame) -> pd.DataFrame:
     out["Season_PTS_gap"] = out["Home_Season_PTS_avg"] - out["Away_Season_PTS_avg"]
     out["Season_GF_gap"]  = out["Home_Season_GF_avg"]  - out["Away_Season_GF_avg"]
     out["Season_GA_gap"]  = out["Away_Season_GA_avg"]  - out["Home_Season_GA_avg"]
+    
+    # --- Home-only and Away-only rolling form splits ---
+
+    # Home team performance when playing AT HOME
+    home_home_matches = (
+        out[out["HomeTeam"] == out["HomeTeam"]]
+    )
+
+    # Away team performance when playing AWAY
+    away_away_matches = (
+        out[out["AwayTeam"] == out["AwayTeam"]]
+    )
+
+    # Rolling home-at-home stats for HomeTeam
+    out["Home_Home_PTS_roll"] = (
+        out.groupby("HomeTeam")["HomePoints"]
+        .rolling(window=5, min_periods=3)
+        .mean()
+        .reset_index(level=0, drop=True)
+    )
+
+    out["Home_Home_GF_roll"] = (
+        out.groupby("HomeTeam")["FTHG"]
+        .rolling(window=5, min_periods=3)
+        .mean()
+        .reset_index(level=0, drop=True)
+    )
+
+    out["Home_Home_GA_roll"] = (
+        out.groupby("HomeTeam")["FTAG"]
+        .rolling(window=5, min_periods=3)
+        .mean()
+        .reset_index(level=0, drop=True)
+    )
+
+    # Rolling away-away stats for AwayTeam
+    out["Away_Away_PTS_roll"] = (
+        out.groupby("AwayTeam")["AwayPoints"]
+        .rolling(window=5, min_periods=3)
+        .mean()
+        .reset_index(level=0, drop=True)
+    )
+
+    out["Away_Away_GF_roll"] = (
+        out.groupby("AwayTeam")["FTAG"]
+        .rolling(window=5, min_periods=3)
+        .mean()
+        .reset_index(level=0, drop=True)
+    )
+
+    out["Away_Away_GA_roll"] = (
+        out.groupby("AwayTeam")["FTHG"]
+        .rolling(window=5, min_periods=3)
+        .mean()
+        .reset_index(level=0, drop=True)
+    )
+
+    out["PTS_gap_split"] = (
+        out["Home_Home_PTS_roll"] - out["Away_Away_PTS_roll"]
+    )
+
+    out["GF_gap_split"] = (
+        out["Home_Home_GF_roll"] - out["Away_Away_GF_roll"]
+    )
+
+    out["GA_gap_split"] = (
+        out["Away_Away_GA_roll"] - out["Home_Home_GA_roll"]
+    )
+
 
     return out
+
+def add_elo_features(df, k_factor=20, start_rating=1500):
+    ratings = {}
+    elo_home = []
+    elo_away = []
+    elo_diff = []
+
+    for _, row in df.iterrows():
+        home = row["HomeTeam"]
+        away = row["AwayTeam"]
+
+        ratings.setdefault(home, start_rating)
+        ratings.setdefault(away, start_rating)
+
+        Rh = ratings[home]
+        Ra = ratings[away]
+
+        exp_home = 1 / (1 + 10 ** ((Ra - Rh) / 400))
+        exp_away = 1 - exp_home
+
+        elo_home.append(Rh)
+        elo_away.append(Ra)
+        elo_diff.append(Rh - Ra)
+
+        # Update ratings AFTER match
+        result = row["Result"]
+        if result == 0:   # home win
+            Sh, Sa = 1, 0
+        elif result == 1: # draw
+            Sh, Sa = 0.5, 0.5
+        else:             # away win
+            Sh, Sa = 0, 1
+
+        ratings[home] = Rh + k_factor * (Sh - exp_home)
+        ratings[away] = Ra + k_factor * (Sa - exp_away)
+
+    df["ELO_Home"] = elo_home
+    df["ELO_Away"] = elo_away
+    df["ELO_Diff"] = elo_diff
+
+    return df
