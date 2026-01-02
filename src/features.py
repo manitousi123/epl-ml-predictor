@@ -307,3 +307,62 @@ def add_elo_features(df, k_factor=20, start_rating=1500):
     df["ELO_Diff"] = elo_diff
 
     return df
+
+
+def add_h2h_features(df, window=10):
+    """
+    Adds rolling head-to-head matchup features.
+    Based only on matches played BEFORE the current game.
+    """
+    h2h_pts = []
+    h2h_gd = []
+    h2h_count = []
+
+    matchup_history = {}
+
+    for _, row in df.iterrows():
+        home = row["HomeTeam"]
+        away = row["AwayTeam"]
+
+        key = tuple(sorted([home, away]))
+
+        history = matchup_history.get(key, [])
+
+        # --- compute features from PAST meetings only ---
+        if len(history) == 0:
+            h2h_pts.append(0)
+            h2h_gd.append(0)
+            h2h_count.append(0)
+        else:
+            window_hist = history[-window:]
+
+            pts_vals = [h["pts_home"] for h in window_hist]
+            gd_vals = [h["gd"] for h in window_hist]
+
+            h2h_pts.append(sum(pts_vals) / len(pts_vals))
+            h2h_gd.append(sum(gd_vals) / len(gd_vals))
+            h2h_count.append(len(window_hist))
+
+        # ---- determine current match outcome ----
+        if row["Result"] == 0:       # home win
+            pts_home = 3
+            gd = row["FTHG"] - row["FTAG"]
+        elif row["Result"] == 1:     # draw
+            pts_home = 1
+            gd = 0
+        else:                        # away win
+            pts_home = 0
+            gd = row["FTHG"] - row["FTAG"]
+
+        # ---- update matchup history AFTER match ----
+        history.append({
+            "pts_home": pts_home,
+            "gd": gd
+        })
+        matchup_history[key] = history
+
+    df["H2H_PTS_avg"] = h2h_pts
+    df["H2H_GD_avg"] = h2h_gd
+    df["H2H_Count"] = h2h_count
+
+    return df
