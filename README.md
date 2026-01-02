@@ -1,0 +1,5 @@
+This project develops a machine learning model for predicting English Premier League match outcomes using feature-driven statistical modelling. The work explores the impact of domain-informed feature engineering — including bookmaker-implied probabilities, rolling form indicators, venue-specific performance splits, season-level strength metrics, and an ELO-style dynamic rating system — on predictive accuracy and calibration quality.  
+
+The final model achieves strong performance and well-calibrated probability estimates, evaluated through accuracy, confusion-matrix analysis, and Brier score metrics. The accompanying project report documents the full modelling process, experimental feature iterations, evaluation methodology, and reflections on future extensions such as live-season updating and richer contextual features.
+
+This is currently V1 of the model, which has acheived an accuraucy score of ~77%.
